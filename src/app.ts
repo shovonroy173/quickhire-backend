@@ -58,6 +58,9 @@ if (config.NODE_ENV === "development") {
 // Connect to database
 connectDatabase();
 
+// Required when deployed behind reverse proxies (Vercel/Render/Nginx)
+app.set("trust proxy", 1);
+
 // Security middleware
 app.use(helmet());
 app.use(
@@ -80,14 +83,61 @@ app.use(
   }),
 );
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: "Too many requests from this IP, please try again later.",
-  skip: () => config.NODE_ENV === "development",
+// Smart rate limiting
+const isDev = () => config.NODE_ENV === "development";
+const isReadMethod = (method: string) =>
+  method === "GET" || method === "HEAD" || method === "OPTIONS";
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  message: "Too many authentication requests from this IP, please try again later.",
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: isDev,
 });
-app.use("/api", limiter);
+
+const authMutationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: "Too many login/register attempts from this IP, please try again later.",
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => isDev() || isReadMethod(req.method),
+});
+
+const publicReadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 400,
+  message: "Too many read requests from this IP, please try again later.",
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => isDev() || !isReadMethod(req.method),
+});
+
+const writeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 80,
+  message: "Too many write requests from this IP, please try again later.",
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) =>
+    isDev() ||
+    isReadMethod(req.method) ||
+    req.path.startsWith("/auth"),
+});
+
+// Route-aware limits
+app.use("/api/auth", authLimiter);
+app.use("/api/auth/login", authMutationLimiter);
+app.use("/api/auth/register", authMutationLimiter);
+app.use("/api/auth/refresh-token", authMutationLimiter);
+
+// Public jobs read endpoints can be hit frequently from home/list pages
+app.use("/api/jobs", publicReadLimiter);
+
+// Writes are intentionally stricter to protect server resources
+app.use("/api", writeLimiter);
 
 // Body parsing
 app.use(express.json({ limit: "10mb" }));
