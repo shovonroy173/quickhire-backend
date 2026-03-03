@@ -3,7 +3,6 @@ import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 import compression from "compression";
-import { rateLimit } from "express-rate-limit";
 import { config } from "./config/env";
 import { connectDatabase } from "./config/database";
 import routes from "./routes";
@@ -83,61 +82,8 @@ app.use(
   }),
 );
 
-// Smart rate limiting
-const isDev = () => config.NODE_ENV === "development";
-const isReadMethod = (method: string) =>
-  method === "GET" || method === "HEAD" || method === "OPTIONS";
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 120,
-  message: "Too many authentication requests from this IP, please try again later.",
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: isDev,
-});
-
-const authMutationLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  message: "Too many login/register attempts from this IP, please try again later.",
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req) => isDev() || isReadMethod(req.method),
-});
-
-const publicReadLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 400,
-  message: "Too many read requests from this IP, please try again later.",
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req) => isDev() || !isReadMethod(req.method),
-});
-
-const writeLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 80,
-  message: "Too many write requests from this IP, please try again later.",
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req) =>
-    isDev() ||
-    isReadMethod(req.method) ||
-    req.path.startsWith("/auth"),
-});
-
-// Route-aware limits
-app.use("/api/auth", authLimiter);
-app.use("/api/auth/login", authMutationLimiter);
-app.use("/api/auth/register", authMutationLimiter);
-app.use("/api/auth/refresh-token", authMutationLimiter);
-
-// Public jobs read endpoints can be hit frequently from home/list pages
-app.use("/api/jobs", publicReadLimiter);
-
-// Writes are intentionally stricter to protect server resources
-app.use("/api", writeLimiter);
+// Rate limiter is intentionally disabled.
+// app.use("/api", limiter);
 
 // Body parsing
 app.use(express.json({ limit: "10mb" }));
