@@ -22,10 +22,27 @@ const toOrigin = (value: string): string | null => {
 };
 
 const allowedOrigins = new Set(
-  config.CORS_ORIGIN.split(",")
+  config.CORS_ORIGIN.split(',')
     .map((origin) => toOrigin(origin))
     .filter((origin): origin is string => Boolean(origin)),
 );
+
+const isTrustedVercelOrigin = (origin: string): boolean => {
+  try {
+    const parsed = new URL(origin);
+    if (parsed.protocol !== 'https:') {
+      return false;
+    }
+
+    const hostname = parsed.hostname.toLowerCase();
+    return (
+      /^quickhire-frontend(?:-[a-z0-9-]+)?\.vercel\.app$/.test(hostname) ||
+      /^quickhire-admin(?:-[a-z0-9-]+)?\.vercel\.app$/.test(hostname)
+    );
+  } catch {
+    return false;
+  }
+};
 
 if (config.NODE_ENV === "development") {
   allowedOrigins.add("http://localhost:3000");
@@ -52,7 +69,7 @@ app.use(
       }
 
       const normalizedOrigin = toOrigin(origin);
-      if (normalizedOrigin && allowedOrigins.has(normalizedOrigin)) {
+      if (normalizedOrigin && (allowedOrigins.has(normalizedOrigin) || isTrustedVercelOrigin(normalizedOrigin))) {
         callback(null, true);
         return;
       }
